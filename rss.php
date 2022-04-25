@@ -20,7 +20,7 @@ class BootstrapGenerator
             $file = file_get_contents('https://github.com/misnard/getID3/archive/master.zip');
             file_put_contents('./.rss-dependencies/.cache/id3requirements/master.zip', $file);
 
-            $zip = new ZipArchive;
+            $zip = new \ZipArchive;
             if ($zip->open('./.rss-dependencies/.cache/id3requirements/master.zip')) {
                 $zip->extractTo('./.rss-dependencies/.cache/id3requirements/');
                 $zip->close();
@@ -132,8 +132,9 @@ class RssGenerator
      */
     public function generateRssContent($bulkContent)
     {
+        $first = current($bulkContent);
         foreach($bulkContent as $item) {
-            $this->insertRssItem($item);
+            $this->insertRssItem($item, $first);
         }
     }
 
@@ -179,10 +180,10 @@ class RssGenerator
     /**
      * @param $item
      */
-    public function insertRssItem($item)
+    public function insertRssItem($item, $first)
     {
         $xmlItem = $this->channelNode->addChild('item');
-        $id3Infos = $this->getId3($item);
+        $id3Infos = $this->getId3($item, $first);
 
         foreach ($id3Infos as $key => $id3Info) {
             //todo switch if params is here
@@ -212,12 +213,24 @@ class RssGenerator
             $item->addAttribute($key, $param);
         }
     }
+    
+    public function getSuffixNumber($item)
+    {
+        $subject = array($item['item_name']);
+        $pattern = array('/.*?(\d+)\.[a-zA-Z0-9]{3}$/');
+        $replace = array('$1');
+        $filtered = preg_filter($pattern, $replace, $subject);
+        $valueStr = current($filtered);
+        $value = is_string($valueStr) ? intval($valueStr) : false;
+        return $value;
+    }
 
     /**
      * @param $item
+     * @param $first
      * @return array|mixed
      */
-    public function getId3($item)
+    public function getId3($item, $first)
     {
         $filteredId3Infos = [];
         $filePath = './.rss-dependencies/.cache/' . $item['item_name'];
@@ -235,12 +248,23 @@ class RssGenerator
                 } else {
                     $finalImageName = $this->config['IMAGE'];
                 }
+                
+                // niieani changes
+                $value = $this->getSuffixNumber($item);
+                $timestamp = filemtime($item['item_name']);
+                if ($value !== false) {
+                    $firstTimestamp = filemtime($first['item_name']);
+                    // use timestamp of the first file, minus 1 hour, and add seconds
+                    $timestamp = $firstTimestamp - 3600 + $value;
+                }
+                // niieani /changes
+                
                 $fileExtention = pathinfo($item['item_name'], PATHINFO_EXTENSION);
                 $filteredId3Infos = [
                     "title" => !empty($id3FileInfos['tags']['id3v2']['title'][0])
                         ? htmlspecialchars($id3FileInfos['tags']['id3v2']['title'][0])
                         : $item['item_name'],
-                    "pubDate" => date("D, d M Y H:i:s O", filemtime($item['item_name'])),
+                    "pubDate" => date("D, d M Y H:i:s O", $timestamp),
                     "description" => !empty($id3FileInfos['tags']['id3v2']['comment'][0]) ?
                         htmlspecialchars($id3FileInfos['tags']['id3v2']['comment'][0]) : " ",
                     "link" => $id3FileInfos['tags']['id3v2']['url_user'][0] ?? null,
